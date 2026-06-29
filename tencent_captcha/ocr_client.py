@@ -16,14 +16,22 @@ from PIL import Image
 
 log = logging.getLogger(__name__)
 
+# Minimum per-hint score to submit verify; below this we retry without verify.
+SUBMIT_MIN_SCORE = 0.43
+SUBMIT_EACH_MIN = 0.40
+BBOX_MIN_SCORE = 0.43
+EDGE_MARGIN = 15
+EDGE_MIN_SCORE = 0.65
+
 
 class DdddOcrClient:
     def __init__(self, base_url: str = "http://127.0.0.1:7777", timeout: float = 30.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._session = requests.Session()
 
     def _post(self, path: str, payload: dict[str, Any]) -> Any:
-        r = requests.post(f"{self.base_url}{path}", json=payload, timeout=self.timeout)
+        r = self._session.post(f"{self.base_url}{path}", json=payload, timeout=self.timeout)
         r.raise_for_status()
         return r.json()
 
@@ -302,6 +310,86 @@ class DdddOcrClient:
         return c1, s1, b1
 
     @staticmethod
+    def _is_edge_suspicious(
+        center: Tuple[int, int],
+        score: float,
+        canvas_w: int,
+        canvas_h: int,
+    ) -> bool:
+        x, y = center
+        near_edge = x < EDGE_MARGIN or y < EDGE_MARGIN
+        near_far = (canvas_w and x > canvas_w - EDGE_MARGIN) or (canvas_h and y > canvas_h - EDGE_MARGIN)
+        if (near_edge or near_far) and score < EDGE_MIN_SCORE:
+            return True
+        return False
+
+    @staticmethod
+    def _candidate_rank(scores: list[float]) -> tuple[float, float]:
+        return (min(scores), sum(scores) / len(scores))
+
+    @staticmethod
+    def _scores_acceptable(scores: list[float]) -> bool:
+        if not scores:
+            return False
+        if min(scores) < SUBMIT_EACH_MIN:
+            return False
+        return min(scores) >= SUBMIT_MIN_SCORE
+
+    def _run_sequential_match(
+        self,
+        hint_images: list[bytes],
+        bg: np.ndarray,
+        bg_gray: np.ndarray,
+        bg_art: np.ndarray,
+        target_size: Optional[Tuple[int, int]],
+    ) -> tuple[list[tuple[int, int]], list[float]]:
+        h, w = bg_gray.shape[:2]
+        search_art = bg_art.copy()
+        seq_coords: list[tuple[int, int]] = []
+        seq_scores: list[float] = []
+        for idx, hint_bytes in enumerate(hint_images):
+            center, score, box = self._match_hint_on_canvas(
+                hint_bytes,
+                bg,
+                bg_gray,
+                bg_art,
+                target_size=target_size,
+                search_art=search_art,
+            )
+            if self._is_edge_suspicious(center, score, w, h):
+                self._mask_used_region(search_art, box)
+                center2, score2, box2 = self._match_hint_on_canvas(
+                    hint_bytes,
+                    bg,
+                    bg_gray,
+                    bg_art,
+                    target_size=target_size,
+                    search_art=search_art,
+                )
+                if score2 >= score:
+                    center, score, box = center2, score2, box2
+                log.warning(
+                    "hint#%d edge match adjusted score=%.3f->%.3f center=%s",
+                    idx + 1,
+                    score if score2 < score else score2,
+                    score,
+                    center,
+                )
+            if score < SUBMIT_EACH_MIN:
+                log.warning("hint#%d low confidence score=%.3f center=%s", idx + 1, score, center)
+            log.info(
+                "hint#%d -> center=%s score=%.3f via=sequential box=%s",
+                idx + 1,
+                center,
+                score,
+                box,
+            )
+            self._mask_used_region(search_art, box)
+            seq_coords.append(center)
+            seq_scores.append(score)
+        return seq_coords, seq_scores
+
+    @staticmethod
     def _contour_similarity(hint_art: np.ndarray, cand_art: np.ndarray) -> float:
         hint_cnts, _ = cv2.findContours(hint_art, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cand_cnts, _ = cv2.findContours(cand_art, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -450,7 +538,7 @@ class DdddOcrClient:
         bg_gray: np.ndarray,
         bg_art: np.ndarray,
         target_size: Optional[Tuple[int, int]],
-    ) -> Optional[List[Tuple[int, int]]]:
+    ) -> Optional[tuple[list[tuple[int, int]], list[float]]]:
         if len(bboxes) < len(hint_images):
             return None
 
@@ -483,10 +571,7 @@ class DdddOcrClient:
         scores: list[float] = []
         for hi in range(n_h):
             score, center, box, bi = details[hi]
-            hint_scores = sorted(
-                (s for s, h, b, _c, _bx in pairs if h == hi),
-                reverse=True,
-            )
+            hint_scores = sorted((s for s, h, b, _c, _bx in pairs if h == hi), reverse=True)
             if len(hint_scores) >= 2 and (hint_scores[0] - hint_scores[1]) < 0.06:
                 raise RuntimeError(
                     "hint#%d 匹配歧义 (top=%.3f second=%.3f)，请重试"
@@ -495,16 +580,16 @@ class DdddOcrClient:
             coords.append(center)
             scores.append(score)
             log.info(
-                "hint#%d -> center=%s score=%.3f bbox_idx=%d box=%s",
+                "hint#%d -> center=%s score=%.3f bbox_idx=%d box=%s via=bbox",
                 hi + 1,
                 center,
                 score,
                 bi,
                 box,
             )
-        if min(scores) < 0.40:
-            raise RuntimeError("图标匹配置信度过低 (min=%.3f)，请重试" % min(scores))
-        return coords
+        if min(scores) < BBOX_MIN_SCORE:
+            raise RuntimeError("bbox 匹配置信度过低 (min=%.3f)，请重试" % min(scores))
+        return coords, scores
 
     def _bg_icon_target_size_from_bboxes(
         self,
@@ -550,6 +635,7 @@ class DdddOcrClient:
         bg = self._decode_bgr(bg_bytes)
         bg_gray = cv2.cvtColor(bg, cv2.COLOR_BGR2GRAY)
         bg_art = self._extract_line_art(bg_gray)
+        canvas_h, canvas_w = bg_gray.shape[:2]
 
         raw_boxes = self.detection(bg_bytes)
         bboxes = self._filter_icon_bboxes(raw_boxes, min_side=22)
@@ -562,52 +648,56 @@ class DdddOcrClient:
             target_size,
         )
 
-        # Primary: ordered full-canvas search (masks each hit before next hint)
-        search_art = bg_art.copy()
-        seq_coords: list[tuple[int, int]] = []
-        seq_scores: list[float] = []
-        for idx, hint_bytes in enumerate(hint_images):
-            center, score, box = self._match_hint_on_canvas(
-                hint_bytes,
-                bg,
-                bg_gray,
-                bg_art,
-                target_size=target_size,
-                search_art=search_art,
-            )
-            if score < 0.40:
-                log.warning("hint#%d low confidence score=%.3f center=%s", idx + 1, score, center)
-            log.info(
-                "hint#%d -> center=%s score=%.3f via=sequential box=%s",
-                idx + 1,
-                center,
-                score,
-                box,
-            )
-            self._mask_used_region(search_art, box)
-            seq_coords.append(center)
-            seq_scores.append(score)
+        seq_coords, seq_scores = self._run_sequential_match(
+            hint_images, bg, bg_gray, bg_art, target_size
+        )
 
-        if min(seq_scores) >= 0.45 or (
-            min(seq_scores) >= 0.38 and max(seq_scores) >= 0.48
-        ):
-            return seq_coords
-
-        # Secondary: detection-box assignment (when sequential is weak)
+        bbox_coords: Optional[list[tuple[int, int]]] = None
+        bbox_scores: Optional[list[float]] = None
         if len(bboxes) >= len(hint_images):
             try:
-                assigned = self._assign_hints_to_bboxes(
+                bbox_result = self._assign_hints_to_bboxes(
                     hint_images, bboxes[:10], bg, bg_gray, bg_art, target_size
                 )
-                if assigned is not None:
-                    log.info("using bbox assignment (sequential min=%.3f)", min(seq_scores))
-                    return assigned
+                if bbox_result is not None:
+                    bbox_coords, bbox_scores = bbox_result
             except RuntimeError as exc:
                 log.info("bbox assignment skipped: %s", exc)
 
-        raise RuntimeError(
-            "图标匹配置信度过低 (sequential min=%.3f)，请重试" % min(seq_scores)
+        candidates: list[tuple[str, list[tuple[int, int]], list[float]]] = []
+        seq_edge_bad = any(
+            self._is_edge_suspicious(c, s, canvas_w, canvas_h)
+            for c, s in zip(seq_coords, seq_scores)
         )
+        if self._scores_acceptable(seq_scores) and not seq_edge_bad:
+            candidates.append(("sequential", seq_coords, seq_scores))
+        elif seq_edge_bad:
+            log.info("sequential rejected: edge suspicious (min=%.3f)", min(seq_scores))
+
+        if bbox_coords and bbox_scores and self._scores_acceptable(bbox_scores):
+            candidates.append(("bbox", bbox_coords, bbox_scores))
+
+        if not candidates:
+            raise RuntimeError(
+                "图标匹配置信度过低 (sequential min=%.3f, bbox min=%s)，请重试"
+                % (
+                    min(seq_scores),
+                    "%.3f" % min(bbox_scores) if bbox_scores else "n/a",
+                )
+            )
+
+        method, coords, scores = max(
+            candidates,
+            key=lambda item: self._candidate_rank(item[2]),
+        )
+        log.info(
+            "using %s path min=%.3f avg=%.3f scores=%s",
+            method,
+            min(scores),
+            sum(scores) / len(scores),
+            ["%.3f" % s for s in scores],
+        )
+        return coords
 
     def parse_select_result(self, raw: list[dict[str, list[int]]]) -> list[dict[str, Any]]:
         parsed: list[dict[str, Any]] = []

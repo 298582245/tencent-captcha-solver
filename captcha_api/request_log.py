@@ -44,7 +44,7 @@ def init_db() -> None:
                     entry_url TEXT NOT NULL DEFAULT '',
                     js_path TEXT NOT NULL DEFAULT '',
                     ocr_url TEXT NOT NULL DEFAULT '',
-                    retries INTEGER NOT NULL DEFAULT 8,
+                    retries INTEGER NOT NULL DEFAULT 4,
                     request_json TEXT NOT NULL DEFAULT '{}',
                     http_status INTEGER NOT NULL DEFAULT 200,
                     response_code INTEGER NOT NULL DEFAULT 0,

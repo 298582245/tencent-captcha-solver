@@ -9,7 +9,7 @@ services:
     environment:
       # ddddocr Flask address (change to your OCR service)
       OCR_BASE_URL: "http://124.222.179.175:7777"
-      CAPTCHA_MAX_RETRIES: "8"
+      CAPTCHA_MAX_RETRIES: "4"
       REQUEST_LOG_DB: "/app/data/requests.db"
       # WebUI login (required to access /ui and /api/logs)
       WEBUI_USERNAME: "admin"

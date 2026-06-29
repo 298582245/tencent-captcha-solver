@@ -141,12 +141,18 @@ def solve_once(
     ocr_base_url: str = "http://127.0.0.1:7777",
     user_agent: Optional[str] = None,
     js_path: Optional[str] = None,
+    http: Optional[TCaptchaClient] = None,
+    ocr: Optional[DdddOcrClient] = None,
+    tdc: Optional[TdcBridge] = None,
 ) -> CaptchaResult:
-    http = TCaptchaClient(entry_url=entry_url, user_agent=user_agent, js_path=js_path) if user_agent else TCaptchaClient(
-        entry_url=entry_url, js_path=js_path
-    )
-    ocr = DdddOcrClient(base_url=ocr_base_url)
-    tdc = TdcBridge()
+    if http is None:
+        http = TCaptchaClient(entry_url=entry_url, user_agent=user_agent, js_path=js_path) if user_agent else TCaptchaClient(
+            entry_url=entry_url, js_path=js_path
+        )
+    if ocr is None:
+        ocr = DdddOcrClient(base_url=ocr_base_url)
+    if tdc is None:
+        tdc = TdcBridge()
 
     pre = http.prehandle(appid)
     challenge = _detect_challenge_type(pre)
@@ -202,10 +208,13 @@ def solve_captcha(
     entry_url: str = DEFAULT_ENTRY_URL,
     ocr_base_url: str = "http://127.0.0.1:7777",
     js_path: Optional[str] = None,
-    max_retries: int = 3,
+    max_retries: int = 4,
 ) -> CaptchaResult:
     aid = appid or TENCENTCLOUD_DEMO_APPIDS.get(challenge_type, TENCENTCLOUD_DEMO_APPIDS["word_click"])
     entry_url, js_path = _apply_aid_preset(aid, entry_url, js_path)
+    http = TCaptchaClient(entry_url=entry_url, js_path=js_path)
+    ocr = DdddOcrClient(base_url=ocr_base_url)
+    tdc = TdcBridge()
     last: Optional[CaptchaResult] = None
     for attempt in range(1, max_retries + 1):
         log.info("solve attempt %d/%d appid=%s", attempt, max_retries, aid)
@@ -215,6 +224,9 @@ def solve_captcha(
                 entry_url=entry_url,
                 ocr_base_url=ocr_base_url,
                 js_path=js_path,
+                http=http,
+                ocr=ocr,
+                tdc=tdc,
             )
             last = result
             if result.ok:

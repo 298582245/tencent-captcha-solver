@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 
 from tencent_captcha import solve_captcha
@@ -22,8 +23,8 @@ def main() -> int:
         help="演示页验证类型；建议先用 image_select 测通",
     )
     parser.add_argument("--entry-url", default=DEFAULT_ENTRY_URL, help="业务入口页 Referer")
-    parser.add_argument("--ocr-url", default="http://124.222.179.175:7777", help="ddddocr Flask 服务地址")
-    parser.add_argument("--retries", type=int, default=8)
+    parser.add_argument("--ocr-url", default=None, help="ddddocr Flask 服务地址（默认 OCR_BASE_URL 或 http://127.0.0.1:7777）")
+    parser.add_argument("--retries", type=int, default=4)
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -37,7 +38,7 @@ def main() -> int:
         appid=args.appid,
         challenge_type=args.challenge_type,
         entry_url=args.entry_url,
-        ocr_base_url=args.ocr_url,
+        ocr_base_url=args.ocr_url or os.environ.get("OCR_BASE_URL", "http://127.0.0.1:7777"),
         max_retries=args.retries,
     )
 

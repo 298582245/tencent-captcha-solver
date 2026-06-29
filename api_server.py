@@ -132,14 +132,14 @@ def _parse_params():
         body.get("js") or body.get("js_path") or request.args.get("js") or request.args.get("js_path") or ""
     ).strip()
     ocr_url = str(
-        body.get("ocr_url") or request.args.get("ocr_url") or _cfg("OCR_BASE_URL", "http://124.222.179.175:7777")
+        body.get("ocr_url") or request.args.get("ocr_url") or _cfg("OCR_BASE_URL", "http://127.0.0.1:7777")
     ).strip()
 
-    retries_raw = body.get("retries", request.args.get("retries", _cfg("CAPTCHA_MAX_RETRIES", "8")))
+    retries_raw = body.get("retries", request.args.get("retries", _cfg("CAPTCHA_MAX_RETRIES", "4")))
     try:
         retries = int(retries_raw)
     except (TypeError, ValueError):
-        retries = 8
+        retries = 4
 
     js_val = js_path if js_path else None
 
@@ -326,6 +326,13 @@ def main():
 
     init_db()
     _configure_app()
+    try:
+        from tencent_captcha.tdc_bridge import TdcBridge
+
+        TdcBridge().warm_up()
+        log.info("TDC worker ready")
+    except Exception as exc:
+        log.warning("TDC warm-up skipped: %s", exc)
     log.info("request log db ready")
     log.info("API http://%s:%s/solve_captcha?aid=APPID&type=1&userid=USER", args.host, args.port)
     if _webui_enabled():
