@@ -1,0 +1,11 @@
+# Python 3.7.9 compatible pins (server without 3.8+)
+# Install: pip install -r requirements-py37.txt
+
+flask>=2.0.0,<3.0.0
+requests>=2.25.0,<2.32.0
+numpy>=1.19.0,<1.22.0
+Pillow>=8.0.0,<10.0.0
+opencv-python-headless>=4.5.0,<4.6.0
+
+# Optional: TLS impersonate (needs Python 3.8+). On 3.7 the client falls back to requests.
+# curl_cffi>=0.7.0

@@ -1,0 +1,20 @@
+services:
+  captcha-api:
+    build: .
+    image: tencent-captcha-api:latest
+    container_name: tencent-captcha-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # ddddocr Flask address (change to your OCR service)
+      OCR_BASE_URL: "http://124.222.179.175:7777"
+      CAPTCHA_MAX_RETRIES: "8"
+      # Optional: rainyun business page (aid=2039519451 has built-in preset)
+      # CAPTCHA_ENTRY_URL: "https://app.rainyun.com/account/reward/earn#"
+      # Optional: HTTP proxy for captcha / OCR requests
+      # HTTP_PROXY: "http://host.docker.internal:7890"
+      # HTTPS_PROXY: "http://host.docker.internal:7890"
+    extra_hosts:
+      # Access OCR on host machine: OCR_BASE_URL=http://host.docker.internal:7777
+      - "host.docker.internal:host-gateway"

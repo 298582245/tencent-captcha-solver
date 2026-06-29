@@ -1,0 +1,16 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.venv
+venv
+env
+debug_captcha
+debug_pre.json
+*.md
+terminals
+tdc/js/node_modules
+tdc/TJNCaptcha-global.js

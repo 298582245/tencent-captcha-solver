@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.dist/
+build/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.*
+*.pem
+credentials.json
+
+# Debug / local test artifacts
+debug_captcha/
+debug_pre.json
+
+# TDC node deps (rebuilt by scripts/setup_tdc.py or Docker build)
+tdc/js/node_modules/
+tdc/js/package-lock.json
+
+# Large downloaded assets (optional)
+tdc/TJNCaptcha-global.js
+
+# Docker local overrides
+docker-compose.override.yml
