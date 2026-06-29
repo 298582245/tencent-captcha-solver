@@ -10,6 +10,12 @@ services:
       # ddddocr Flask address (change to your OCR service)
       OCR_BASE_URL: "http://124.222.179.175:7777"
       CAPTCHA_MAX_RETRIES: "8"
+      REQUEST_LOG_DB: "/app/data/requests.db"
+      # WebUI login (required to access /ui and /api/logs)
+      WEBUI_USERNAME: "admin"
+      WEBUI_PASSWORD: "change-me-strong-password"
+      # Optional: fixed session secret (otherwise derived from WEBUI_PASSWORD)
+      # WEBUI_SECRET: "long-random-string"
       # Optional: rainyun business page (aid=2039519451 has built-in preset)
       # CAPTCHA_ENTRY_URL: "https://app.rainyun.com/account/reward/earn#"
       # Optional: HTTP proxy for captcha / OCR requests
@@ -18,3 +24,5 @@ services:
     extra_hosts:
       # Access OCR on host machine: OCR_BASE_URL=http://host.docker.internal:7777
       - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 - Captcha API 日志</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --fail: #f07178;
+      --accent: #59a7ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at top, #1a2740, var(--bg));
+      color: var(--text);
+    }
+    .box {
+      width: min(400px, 92vw);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.25rem; }
+    p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+    label { display: block; margin-bottom: 14px; font-size: 14px; }
+    input {
+      width: 100%;
+      margin-top: 6px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0b1018;
+      color: var(--text);
+      font-size: 14px;
+    }
+    button {
+      width: 100%;
+      margin-top: 8px;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #041018;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .err {
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(240,113,120,.12);
+      color: var(--fail);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <form class="box" method="post" action="/ui/login">
+    <h1>Captcha API 日志</h1>
+    <p>请输入管理员账号密码查看请求记录</p>
+    {% if error %}
+    <div class="err">{{ error }}</div>
+    {% endif %}
+    {% if next %}
+    <input type="hidden" name="next" value="{{ next }}">
+    {% endif %}
+    <label>用户名
+      <input name="username" autocomplete="username" required>
+    </label>
+    <label>密码
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">登录</button>
+  </form>
+</body>
+</html>

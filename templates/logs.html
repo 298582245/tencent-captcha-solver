@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Captcha API 请求日志</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --ok: #3dd68c;
+      --fail: #f07178;
+      --accent: #59a7ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #152033, var(--bg));
+    }
+    h1 { margin: 0 0 6px; font-size: 1.35rem; }
+    .sub { color: var(--muted); font-size: 0.92rem; }
+    main { padding: 20px 24px 40px; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    input, button, select {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .card .label { color: var(--muted); font-size: 12px; }
+    .card .value { font-size: 1.4rem; font-weight: 600; margin-top: 4px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+    th { background: #121a27; color: var(--muted); font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge.ok { background: rgba(61,214,140,.15); color: var(--ok); }
+    .badge.fail { background: rgba(240,113,120,.15); color: var(--fail); }
+    .mono {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+      color: #c5d4ea;
+    }
+    .pager { margin-top: 14px; display: flex; gap: 8px; align-items: center; }
+    .empty { color: var(--muted); padding: 24px; text-align: center; }
+    details summary { cursor: pointer; color: var(--accent); }
+    pre {
+      margin: 8px 0 0;
+      padding: 10px;
+      background: #0b1018;
+      border-radius: 8px;
+      overflow: auto;
+      max-height: 220px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Captcha API 请求日志</h1>
+    <div class="sub">记录每次 /solve_captcha 的请求参数与返回结果，可按 userid 筛选</div>
+    <form method="post" action="/ui/logout" style="margin-top:12px">
+      <button type="submit">退出登录</button>
+    </form>
+  </header>
+  <main>
+    <div class="toolbar">
+      <label>userid <input id="userid" placeholder="留空=全部"></label>
+      <label>每页
+        <select id="limit">
+          <option>20</option>
+          <option selected>50</option>
+          <option>100</option>
+        </select>
+      </label>
+      <button id="btnSearch">查询</button>
+      <button id="btnRefresh">刷新</button>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div id="tableWrap"></div>
+    <div class="pager">
+      <button id="btnPrev">上一页</button>
+      <span id="pageInfo"></span>
+      <button id="btnNext">下一页</button>
+    </div>
+  </main>
+
+  <script>
+    let offset = 0;
+
+    function qs(name) {
+      return new URLSearchParams(location.search).get(name) || "";
+    }
+
+    function apiUrl(path, params) {
+      const u = new URL(path, location.origin);
+      Object.entries(params || {}).forEach(([k, v]) => {
+        if (v !== "" && v !== null && v !== undefined) u.searchParams.set(k, v);
+      });
+      return u.toString();
+    }
+
+    async function apiFetch(path, params) {
+      const res = await fetch(apiUrl(path, params), { credentials: "same-origin" });
+      if (res.status === 401) {
+        location.href = "/ui/login?next=" + encodeURIComponent(location.pathname + location.search);
+        throw new Error("login required");
+      }
+      return res.json();
+    }
+
+    async function loadStats() {
+      const userid = document.getElementById("userid").value.trim();
+      const data = await apiFetch("/api/logs/stats", { userid });
+      const s = data.data || {};
+      document.getElementById("stats").innerHTML = `
+        <div class="card"><div class="label">总请求</div><div class="value">${s.total || 0}</div></div>
+        <div class="card"><div class="label">成功</div><div class="value" style="color:var(--ok)">${s.ok_count || 0}</div></div>
+        <div class="card"><div class="label">失败</div><div class="value" style="color:var(--fail)">${s.fail_count || 0}</div></div>
+        <div class="card"><div class="label">成功率</div><div class="value">${s.success_rate || 0}%</div></div>
+      `;
+    }
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+      }[c]));
+    }
+
+    async function loadLogs() {
+      const userid = document.getElementById("userid").value.trim();
+      const limit = document.getElementById("limit").value;
+      const payload = await apiFetch("/api/logs", { userid, limit, offset });
+      const data = payload.data || { items: [], total: 0, limit: limit, offset: offset };
+      const items = data.items || [];
+      const wrap = document.getElementById("tableWrap");
+
+      if (!items.length) {
+        wrap.innerHTML = '<div class="empty">暂无记录</div>';
+      } else {
+        const rows = items.map(it => {
+          const ok = it.success;
+          const req = JSON.stringify(it.request || {}, null, 2);
+          const resp = JSON.stringify(it.response || {}, null, 2);
+          return `<tr>
+            <td>#${it.id}<br><span class="mono">${esc(it.created_at)}</span></td>
+            <td><strong>${esc(it.userid || "-")}</strong><br><span class="mono">${esc(it.client_ip)}</span></td>
+            <td>
+              aid=${esc(it.aid)}<br>
+              type=${esc(it.type_id)}<br>
+              retries=${esc(it.retries)}
+            </td>
+            <td>
+              <span class="badge ${ok ? "ok" : "fail"}">${ok ? "成功" : "失败"}</span><br>
+              code=${esc(it.response_code)}<br>
+              ${esc(it.duration_ms)} ms
+            </td>
+            <td>
+              <details>
+                <summary>请求 / 响应</summary>
+                <div class="mono">entry: ${esc(it.entry_url)}</div>
+                <div class="mono">ocr: ${esc(it.ocr_url)}</div>
+                <pre>${esc(req)}</pre>
+                <pre>${esc(resp)}</pre>
+              </details>
+            </td>
+          </tr>`;
+        }).join("");
+        wrap.innerHTML = `<table>
+          <thead><tr>
+            <th>时间</th><th>用户</th><th>参数</th><th>结果</th><th>详情</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      }
+
+      const total = data.total || 0;
+      const lim = parseInt(data.limit || limit, 10);
+      const page = Math.floor(offset / lim) + 1;
+      const pages = Math.max(1, Math.ceil(total / lim));
+      document.getElementById("pageInfo").textContent =
+        `第 ${page}/${pages} 页，共 ${total} 条`;
+      document.getElementById("btnPrev").disabled = offset <= 0;
+      document.getElementById("btnNext").disabled = offset + lim >= total;
+    }
+
+    async function reloadAll() {
+      await loadStats();
+      await loadLogs();
+    }
+
+    document.getElementById("btnSearch").onclick = () => { offset = 0; reloadAll(); };
+    document.getElementById("btnRefresh").onclick = () => reloadAll();
+    document.getElementById("btnPrev").onclick = () => {
+      const lim = parseInt(document.getElementById("limit").value, 10);
+      offset = Math.max(0, offset - lim);
+      reloadAll();
+    };
+    document.getElementById("btnNext").onclick = () => {
+      const lim = parseInt(document.getElementById("limit").value, 10);
+      offset += lim;
+      reloadAll();
+    };
+
+    const presetUser = qs("userid");
+    if (presetUser) document.getElementById("userid").value = presetUser;
+    reloadAll();
+    setInterval(reloadAll, 15000);
+  </script>
+</body>
+</html>

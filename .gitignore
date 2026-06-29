@@ -26,6 +26,7 @@ credentials.json
 # Debug / local test artifacts
 debug_captcha/
 debug_pre.json
+data/
 
 # TDC node deps (rebuilt by scripts/setup_tdc.py or Docker build)
 tdc/js/node_modules/

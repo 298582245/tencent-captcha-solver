@@ -18,6 +18,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY api_server.py main.py ./
+COPY captcha_api ./captcha_api
+COPY templates ./templates
 COPY tencent_captcha ./tencent_captcha
 COPY scripts ./scripts
 COPY tdc ./tdc
