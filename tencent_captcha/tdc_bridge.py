@@ -6,6 +6,7 @@ from __future__ import annotations
 import atexit
 import json
 import logging
+import select
 import subprocess
 import threading
 from pathlib import Path
@@ -36,11 +37,24 @@ class _TdcWorker:
             cwd=str(js_dir),
         )
         self._io_lock = threading.Lock()
+        self._wait_worker_ready()
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
-        ready = self._proc.stderr.readline() if self._proc.stderr else ""
+
+    def _wait_worker_ready(self, startup_timeout: float = 15.0) -> None:
+        if self._proc.stderr is None:
+            return
+
+        readable, _, _ = select.select([self._proc.stderr], [], [], startup_timeout)
+        if not readable:
+            err = self._proc.stderr.read() if self._proc.stderr else ""
+            raise RuntimeError(f"tdc worker start timeout: {err[-400:]}")
+        ready = self._proc.stderr.readline()
+        if self._proc.poll() is not None:
+            err = self._proc.stderr.read() if self._proc.stderr else ""
+            raise RuntimeError(f"tdc worker exited during start: {err[-400:]}")
         if ready:
-            log.debug("tdc worker: %s", ready.strip())
+            log.info("tdc worker: %s", ready.strip())
 
     def _drain_stderr(self) -> None:
         if not self._proc.stderr:
