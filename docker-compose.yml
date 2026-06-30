@@ -9,7 +9,9 @@ services:
     environment:
       # ddddocr Flask address (change to your OCR service)
       OCR_BASE_URL: "http://124.222.179.175:7777"
-      CAPTCHA_MAX_RETRIES: "4"
+      CAPTCHA_MAX_RETRIES: "6"
+      # Serialize solves by default (raise if OCR server fires many parallel requests)
+      CAPTCHA_MAX_CONCURRENT: "1"
       REQUEST_LOG_DB: "/app/data/requests.db"
       # WebUI login (required to access /ui and /api/logs)
       WEBUI_USERNAME: "admin"

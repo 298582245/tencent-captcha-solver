@@ -208,7 +208,7 @@ def solve_captcha(
     entry_url: str = DEFAULT_ENTRY_URL,
     ocr_base_url: str = "http://127.0.0.1:7777",
     js_path: Optional[str] = None,
-    max_retries: int = 4,
+    max_retries: int = 6,
 ) -> CaptchaResult:
     aid = appid or TENCENTCLOUD_DEMO_APPIDS.get(challenge_type, TENCENTCLOUD_DEMO_APPIDS["word_click"])
     entry_url, js_path = _apply_aid_preset(aid, entry_url, js_path)

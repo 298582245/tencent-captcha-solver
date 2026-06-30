@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     CAPTCHA_API_HOST=0.0.0.0 \
     CAPTCHA_API_PORT=8080 \
-    CAPTCHA_MAX_RETRIES=4
+    CAPTCHA_MAX_RETRIES=6
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm ca-certificates \

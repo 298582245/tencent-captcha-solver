@@ -7,6 +7,7 @@ import hmac
 import logging
 import os
 import sys
+import threading
 import time
 from datetime import timedelta
 from functools import wraps
@@ -34,6 +35,18 @@ TYPE_MAP = {
 
 app = Flask(__name__, template_folder="templates")
 log = logging.getLogger("captcha_api")
+_solve_semaphore = None  # type: Optional[threading.Semaphore]
+
+
+def _get_solve_semaphore() -> threading.Semaphore:
+    global _solve_semaphore
+    if _solve_semaphore is None:
+        try:
+            n = int(_cfg("CAPTCHA_MAX_CONCURRENT", "1"))
+        except (TypeError, ValueError):
+            n = 1
+        _solve_semaphore = threading.Semaphore(max(1, n))
+    return _solve_semaphore
 
 
 def _configure_app():
@@ -135,11 +148,11 @@ def _parse_params():
         body.get("ocr_url") or request.args.get("ocr_url") or _cfg("OCR_BASE_URL", "http://127.0.0.1:7777")
     ).strip()
 
-    retries_raw = body.get("retries", request.args.get("retries", _cfg("CAPTCHA_MAX_RETRIES", "4")))
+    retries_raw = body.get("retries", request.args.get("retries", _cfg("CAPTCHA_MAX_RETRIES", "6")))
     try:
         retries = int(retries_raw)
     except (TypeError, ValueError):
-        retries = 4
+        retries = 6
 
     js_val = js_path if js_path else None
 
@@ -169,46 +182,47 @@ def _run_solve(params):
     started = time.time()
     response_body = {}
     http_status = 500
-    try:
-        result = solve_captcha(
-            appid=params["aid"],
-            challenge_type=params["challenge_type"],
-            entry_url=params["entry_url"],
-            ocr_base_url=params["ocr_url"],
-            js_path=params["js_path"],
-            max_retries=params["retries"],
-        )
-    except Exception as exc:
-        log.exception("api solve error aid=%s", params["aid"])
-        response_body = {"code": 500, "msg": str(exc), "data": None}
-        http_status = 500
-        duration_ms = int((time.time() - started) * 1000)
-        insert_log(
-            userid=params.get("userid", ""),
-            client_ip=_client_ip(),
-            method=request.method,
-            params=params,
-            http_status=http_status,
-            response_body=response_body,
-            duration_ms=duration_ms,
-        )
-        return jsonify(response_body), http_status
+    with _get_solve_semaphore():
+        try:
+            result = solve_captcha(
+                appid=params["aid"],
+                challenge_type=params["challenge_type"],
+                entry_url=params["entry_url"],
+                ocr_base_url=params["ocr_url"],
+                js_path=params["js_path"],
+                max_retries=params["retries"],
+            )
+        except Exception as exc:
+            log.exception("api solve error aid=%s", params["aid"])
+            response_body = {"code": 500, "msg": str(exc), "data": None}
+            http_status = 500
+            duration_ms = int((time.time() - started) * 1000)
+            insert_log(
+                userid=params.get("userid") or "",
+                client_ip=_client_ip(),
+                method=request.method,
+                params=params,
+                http_status=http_status,
+                response_body=response_body,
+                duration_ms=duration_ms,
+            )
+            return jsonify(response_body), http_status
 
-    if result.ok and result.ticket and result.randstr:
-        response_body = {
-            "code": 200,
-            "msg": "ok",
-            "data": {
-                "ticket": result.ticket,
-                "randstr": result.randstr,
-                "challenge_type": result.challenge_type,
-            },
-        }
-        http_status = 200
-    else:
-        err = result.error_msg or ("verify failed code=%s" % result.error_code)
-        response_body = {"code": 500, "msg": err, "data": None}
-        http_status = 500
+        if result.ok and result.ticket and result.randstr:
+            response_body = {
+                "code": 200,
+                "msg": "ok",
+                "data": {
+                    "ticket": result.ticket,
+                    "randstr": result.randstr,
+                    "challenge_type": result.challenge_type,
+                },
+            }
+            http_status = 200
+        else:
+            err = result.error_msg or ("verify failed code=%s" % result.error_code)
+            response_body = {"code": 500, "msg": err, "data": None}
+            http_status = 500
 
     duration_ms = int((time.time() - started) * 1000)
     insert_log(
@@ -334,6 +348,11 @@ def main():
     except Exception as exc:
         log.warning("TDC warm-up skipped: %s", exc)
     log.info("request log db ready")
+    log.info(
+        "solve concurrency=%s retries=%s",
+        _cfg("CAPTCHA_MAX_CONCURRENT", "1"),
+        _cfg("CAPTCHA_MAX_RETRIES", "6"),
+    )
     log.info("API http://%s:%s/solve_captcha?aid=APPID&type=1&userid=USER", args.host, args.port)
     if _webui_enabled():
         log.info("WebUI http://%s:%s/ui (user=%s)", args.host, args.port, _webui_username())

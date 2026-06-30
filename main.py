@@ -24,7 +24,7 @@ def main() -> int:
     )
     parser.add_argument("--entry-url", default=DEFAULT_ENTRY_URL, help="业务入口页 Referer")
     parser.add_argument("--ocr-url", default=None, help="ddddocr Flask 服务地址（默认 OCR_BASE_URL 或 http://127.0.0.1:7777）")
-    parser.add_argument("--retries", type=int, default=4)
+    parser.add_argument("--retries", type=int, default=6)
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
