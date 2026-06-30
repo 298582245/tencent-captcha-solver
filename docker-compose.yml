@@ -13,6 +13,8 @@ services:
       # Serialize solves by default (raise if OCR server fires many parallel requests)
       CAPTCHA_MAX_CONCURRENT: "1"
       REQUEST_LOG_DB: "/app/data/requests.db"
+      CAPTCHA_FAILURE_DIR: "/app/data/failures"
+      CAPTCHA_SAVE_FAILURES: "1"
       # WebUI login (required to access /ui and /api/logs)
       WEBUI_USERNAME: "admin"
       WEBUI_PASSWORD: "change-me-strong-password"

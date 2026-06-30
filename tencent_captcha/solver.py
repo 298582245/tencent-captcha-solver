@@ -18,6 +18,11 @@ from .pow import solve_pow
 from .tdc_bridge import TdcBridge
 from .trajectory import build_image_select_trajectory, build_click_trajectory, merge_trajectories
 
+try:
+    from captcha_api.failure_samples import save_failure_sample
+except ImportError:
+    save_failure_sample = None  # type: ignore
+
 log = logging.getLogger(__name__)
 
 # tencentcloud.com 演示页内置 CaptchaAppId（来自 main.e7a75ff1.js）
@@ -134,6 +139,35 @@ def _solve_coords(
     return ocr.match_word_click(bg_bytes, targets)
 
 
+def _record_failure(
+    *,
+    appid: str,
+    reason: str,
+    challenge_type: str,
+    bg_bytes: Optional[bytes],
+    sprite_bytes: Optional[bytes] = None,
+    hint_images: Optional[list[bytes]] = None,
+    coords: Optional[list[tuple[int, int]]] = None,
+    verify_code: Optional[int] = None,
+    ocr: Optional[DdddOcrClient] = None,
+    extra: Optional[dict] = None,
+) -> None:
+    if save_failure_sample is None or not bg_bytes:
+        return
+    save_failure_sample(
+        aid=appid,
+        reason=reason,
+        bg_bytes=bg_bytes,
+        sprite_bytes=sprite_bytes,
+        hint_images=hint_images,
+        coords=coords,
+        verify_code=verify_code,
+        challenge_type=challenge_type,
+        match_info=getattr(ocr, "last_match_info", None) if ocr else None,
+        extra=extra,
+    )
+
+
 def solve_once(
     *,
     appid: str,
@@ -157,7 +191,31 @@ def solve_once(
     pre = http.prehandle(appid)
     challenge = _detect_challenge_type(pre)
     bg_bytes = http.get_image(pre.img_url)
-    coords = _solve_coords(pre, bg_bytes, http, ocr)
+    sprite_bytes: Optional[bytes] = None
+    hint_images: Optional[list[bytes]] = None
+
+    try:
+        if challenge == "image_select":
+            if not pre.sprite_url:
+                raise RuntimeError("image_select 缺少 sprite_url")
+            if not pre.ins_elem_list:
+                raise RuntimeError("image_select 缺少 ins_elem_cfg")
+            sprite_bytes = http.get_image(pre.sprite_url)
+            hint_images = ocr.extract_hint_images(sprite_bytes, pre.ins_elem_list)
+            coords = ocr.match_select_in_order(bg_bytes, sprite_bytes, pre.ins_elem_list)
+        else:
+            coords = _solve_coords(pre, bg_bytes, http, ocr)
+    except Exception as exc:
+        _record_failure(
+            appid=appid,
+            reason="ocr: %s" % exc,
+            challenge_type=challenge,
+            bg_bytes=bg_bytes,
+            sprite_bytes=sprite_bytes,
+            hint_images=hint_images,
+            ocr=ocr,
+        )
+        raise
 
     traj_segments = []
     if challenge == "image_select":
@@ -191,6 +249,19 @@ def solve_once(
         collect=collect,
         eks=eks,
     )
+    if not verify.ok:
+        _record_failure(
+            appid=appid,
+            reason="verify code=%s" % verify.error_code,
+            challenge_type=challenge,
+            bg_bytes=bg_bytes,
+            sprite_bytes=sprite_bytes,
+            hint_images=hint_images,
+            coords=coords,
+            verify_code=verify.error_code,
+            ocr=ocr,
+            extra={"verify_msg": verify.error_msg, "ans": ans},
+        )
     return CaptchaResult(
         ok=verify.ok,
         ticket=verify.ticket,
